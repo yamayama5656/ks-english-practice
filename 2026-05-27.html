@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>会話分析 2026-05-27</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #1a1a2e;
+    --paper: #f7f4ef;
+    --cream: #ede9e0;
+    --accent: #c0392b;
+    --accent2: #2471a3;
+    --accent3: #1e8449;
+    --muted: #7f8c8d;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "DM Sans", sans-serif; background: var(--paper); color: var(--ink); padding-bottom: 80px; }
+
+  /* HEADER */
+  .header { background: var(--ink); color: white; padding: 36px 20px 28px; position: relative; overflow: hidden; }
+  .header::before { content:""; position:absolute; top:-60px; right:-40px; width:260px; height:260px; border-radius:50%; background:rgba(192,57,43,0.15); pointer-events:none; }
+  .header-label { font-size:11px; letter-spacing:3px; text-transform:uppercase; color:rgba(255,255,255,0.45); margin-bottom:8px; }
+  .header h1 { font-family:"DM Serif Display",serif; font-size:28px; line-height:1.2; margin-bottom:4px; }
+  .header-sub { font-size:13px; color:rgba(255,255,255,0.5); margin-bottom:20px; }
+  .stats-row { display:flex; gap:14px; flex-wrap:wrap; }
+  .stat { background:rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:9px 14px; }
+  .stat-num { font-size:20px; font-weight:600; }
+  .stat-label { font-size:11px; color:rgba(255,255,255,0.5); margin-top:1px; }
+
+  /* TABS */
+  .tabs { display:flex; background:var(--cream); border-bottom:1px solid #ddd; overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+  .tabs::-webkit-scrollbar { display:none; }
+  .tab { flex-shrink:0; padding:13px 18px; font-size:13px; font-weight:500; color:var(--muted); cursor:pointer; border-bottom:2.5px solid transparent; white-space:nowrap; transition:all 0.2s; }
+  .tab.active { color:var(--ink); border-bottom-color:var(--accent); }
+
+  /* PANELS */
+  .panel { display:none; padding:20px 16px; }
+  .panel.active { display:block; }
+  .section-title { font-size:10px; font-weight:700; letter-spacing:2.5px; text-transform:uppercase; color:var(--muted); margin:24px 0 12px; }
+  .section-title:first-child { margin-top:0; }
+
+  /* ===== CONVERSATION FULL VIEW ===== */
+  .convo-line {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 14px;
+    align-items: flex-start;
+  }
+  .convo-meta {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+    padding-top: 3px;
+    min-width: 58px;
+  }
+  .ts { font-size: 10px; color: var(--muted); }
+  .sp { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px; white-space: nowrap; }
+  .sp1 { background:#fdf2e9; color:#d35400; }
+  .sp2 { background:#eaf4fb; color:#2471a3; }
+  .sp3 { background:#eafaf1; color:#1e8449; }
+
+  .bubble {
+    flex: 1;
+    background: white;
+    border: 1px solid #e0dbd0;
+    border-radius: 4px 12px 12px 12px;
+    padding: 11px 14px;
+    line-height: 1.7;
+    font-size: 14px;
+  }
+  .bubble.sp2-bubble { border-radius: 12px 4px 12px 12px; }
+
+  /* カタカナ原文 */
+  .kana-orig {
+    font-size: 11px;
+    color: #bbb;
+    margin-bottom: 6px;
+    font-style: italic;
+    line-height: 1.5;
+  }
+
+  /* インラインハイライト */
+  .hl {
+    display: inline;
+    border-radius: 3px;
+    padding: 1px 3px;
+    cursor: pointer;
+    position: relative;
+    font-weight: 500;
+    transition: opacity 0.15s;
+  }
+  .hl:hover { opacity: 0.85; }
+
+  /* 黄色：もっと自然な表現に置き換えられる */
+  .hl-upgrade {
+    background: #fff3cd;
+    border-bottom: 2px solid #f0a500;
+    color: #7a4f00;
+  }
+  /* 赤：詰まった・日本語になった */
+  .hl-stuck {
+    background: #fde8e8;
+    border-bottom: 2px solid #e74c3c;
+    color: #922b21;
+    text-decoration: line-through;
+    text-decoration-color: #e74c3c;
+  }
+  /* 緑：よく使えていた */
+  .hl-good {
+    background: #e8f8f0;
+    border-bottom: 2px solid #27ae60;
+    color: #1d6a3e;
+  }
+  /* 紫：和製英語 */
+  .hl-wasei {
+    background: #f3e8ff;
+    border-bottom: 2px solid #8e44ad;
+    color: #5b2c6f;
+  }
+
+  /* ポップアップ */
+  .tip {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--ink);
+    color: white;
+    border-radius: 8px;
+    padding: 10px 13px;
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: nowrap;
+    z-index: 100;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+    pointer-events: none;
+    font-weight: 400;
+    max-width: 260px;
+    white-space: normal;
+    text-align: left;
+  }
+  .tip::after {
+    content: "";
+    position: absolute;
+    top: 100%; left: 50%;
+    transform: translateX(-50%);
+    border: 6px solid transparent;
+    border-top-color: var(--ink);
+  }
+  .hl:hover .tip,
+  .hl.open .tip { display: block; }
+
+  .tip-label {
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    opacity: 0.6;
+    margin-bottom: 4px;
+  }
+  .tip-better { color: #7defa7; font-weight: 600; font-size: 13px; }
+  .tip-note { color: rgba(255,255,255,0.7); margin-top: 3px; font-size: 11px; }
+
+  /* 凡例 */
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    margin-bottom: 18px;
+    padding: 12px 14px;
+    background: white;
+    border-radius: 10px;
+    border: 1px solid #e0dbd0;
+  }
+  .legend-item { display:flex; align-items:center; gap:5px; font-size:11px; color:#555; }
+  .legend-dot {
+    width: 12px; height: 12px; border-radius: 2px; flex-shrink:0;
+  }
+
+  /* ===== OTHER TABS (same as before) ===== */
+  .convo-block { margin-bottom:10px; border-radius:12px; overflow:hidden; border:1px solid #e0dbd0; }
+  .convo-header { display:flex; align-items:center; gap:10px; padding:10px 14px; background:var(--cream); cursor:pointer; user-select:none; }
+  .convo-header:hover { background:#e5e0d5; }
+  .timestamp { font-size:11px; color:var(--muted); font-weight:500; min-width:38px; }
+  .speaker-badge { font-size:11px; font-weight:600; padding:3px 9px; border-radius:20px; white-space:nowrap; }
+  .convo-preview { font-size:13px; color:#555; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .toggle-icon { font-size:11px; color:var(--muted); margin-left:auto; flex-shrink:0; }
+  .convo-body { display:none; padding:14px 16px; background:white; border-top:1px solid #e8e3d8; }
+  .convo-body.open { display:block; }
+  .original { font-size:12px; color:#bbb; margin-bottom:8px; font-style:italic; }
+  .restored { font-size:14px; font-weight:500; color:var(--ink); margin-bottom:10px; line-height:1.6; }
+  .intent { font-size:13px; color:#555; margin-bottom:10px; line-height:1.6; }
+  .intent strong { color:var(--ink); }
+  .tags { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .tag { font-size:11px; font-weight:600; padding:3px 9px; border-radius:20px; }
+  .tag-good { background:#eafaf1; color:#1e8449; }
+  .tag-stuck { background:#fdf2e9; color:#c0392b; }
+  .tag-upgrade { background:#f4ecf7; color:#7d3c98; }
+  .tag-natural { background:#eaf4fb; color:#1a5276; }
+  .upgrade-box { margin-top:12px; background:#f4ecf7; border-left:3px solid #7d3c98; border-radius:0 8px 8px 0; padding:12px 14px; }
+  .upgrade-box .label { font-size:10px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; color:#7d3c98; margin-bottom:6px; }
+  .upgrade-box .simple { color:#c0392b; font-size:13px; margin-bottom:4px; }
+  .upgrade-box .better { color:#1e8449; font-size:14px; font-weight:600; }
+  .upgrade-box .note { font-size:12px; color:#666; margin-top:5px; }
+  .stuck-box { margin-top:12px; background:#fdf2e9; border-left:3px solid #e67e22; border-radius:0 8px 8px 0; padding:12px 14px; }
+  .stuck-box .label { font-size:10px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; color:#e67e22; margin-bottom:6px; }
+  .stuck-box .want { color:#555; font-size:13px; margin-bottom:4px; }
+  .stuck-box .answer { color:#1e8449; font-size:14px; font-weight:600; }
+  .phrase-card { background:white; border:1px solid #e0dbd0; border-radius:12px; padding:16px; margin-bottom:10px; }
+  .phrase-card .cat { font-size:10px; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:var(--muted); margin-bottom:8px; }
+  .phrase-card .simple-en { font-size:13px; color:#c0392b; margin-bottom:4px; }
+  .phrase-card .natural-en { font-family:"DM Serif Display",serif; font-size:18px; color:var(--ink); margin-bottom:6px; line-height:1.4; }
+  .phrase-card .jp { font-size:12px; color:#777; margin-bottom:6px; }
+  .phrase-card .why { font-size:12px; color:#2471a3; background:#eaf4fb; padding:6px 10px; border-radius:6px; }
+  .summary-card { background:white; border-radius:12px; border:1px solid #e0dbd0; padding:18px; margin-bottom:12px; }
+  .summary-card h3 { font-size:14px; font-weight:600; margin-bottom:10px; }
+  .summary-card ul { padding-left:0; list-style:none; }
+  .summary-card ul li { font-size:13px; color:#444; padding:6px 0; border-bottom:1px solid #f0ece4; display:flex; gap:8px; line-height:1.5; }
+  .summary-card ul li:last-child { border-bottom:none; }
+  .summary-card ul li::before { content:"—"; color:var(--muted); flex-shrink:0; }
+  .highlight-box { background:var(--ink); color:white; border-radius:12px; padding:20px; margin-bottom:12px; }
+  .highlight-box h3 { font-size:14px; font-weight:600; margin-bottom:12px; color:rgba(255,255,255,0.7); }
+  .highlight-phrase { font-family:"DM Serif Display",serif; font-size:22px; margin-bottom:6px; line-height:1.3; }
+  .highlight-why { font-size:12px; color:rgba(255,255,255,0.55); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-label">会話分析レポート</div>
+  <h1>フリートーク練習<br>2026年5月27日</h1>
+  <div class="header-sub">参加者3人 · 約24分 · カタカナ文字起こしから復元</div>
+  <div class="stats-row">
+    <div class="stat"><div class="stat-num">4</div><div class="stat-label">トピック</div></div>
+    <div class="stat"><div class="stat-num">8</div><div class="stat-label">詰まった場面</div></div>
+    <div class="stat"><div class="stat-num">5</div><div class="stat-label">よく使えた表現</div></div>
+    <div class="stat"><div class="stat-num">7</div><div class="stat-label">アップグレード候補</div></div>
+  </div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="showTab(event,'flow')">📜 会話の流れ</div>
+  <div class="tab" onclick="showTab(event,'upgrade')">⬆️ 表現アップグレード</div>
+  <div class="tab" onclick="showTab(event,'stuck')">⚠️ 詰まった場面</div>
+  <div class="tab" onclick="showTab(event,'summary')">📋 まとめ</div>
+</div>
+
+<!-- ===== TAB: 会話の流れ ===== -->
+<div class="panel active" id="panel-flow">
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#fff3cd;border-bottom:2px solid #f0a500;"></div>もっと自然な表現に置き換えられる（タップで確認）</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#fde8e8;border-bottom:2px solid #e74c3c;"></div>詰まった・日本語になった部分</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#e8f8f0;border-bottom:2px solid #27ae60;"></div>よく使えていた表現</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#f3e8ff;border-bottom:2px solid #8e44ad;"></div>和製英語</div>
+  </div>
+
+  <div class="section-title">Part 1 · 仕事の愚痴 (0:06 – 4:25)</div>
+
+  <!-- 参加者1 opening -->
+  <div class="convo-line">
+    <div class="convo-meta">
+      <span class="ts">0:06</span>
+      <span class="sp sp1">参加者1</span>
+    </div>
+    <div class="bubble">
+      <div class="kana-orig">サイハウトゥートクイック エンマイズ…イエスタデマイシニアマネージャー</div>
+      <span class="hl hl-good">So I have to talk quick.<div class="tip"><div class="tip-label">✓ 自然</div><div class="tip-better">話し始めの導入として自然！</div></div></span>
+      Yesterday, my senior manager...
+      <span class="hl hl-upgrade">she followed her husband.<div class="tip"><div class="tip-label">💡 より自然に</div><div class="tip-better">She left because her husband relocated.</div><div class="tip-note">「followed」だと少し不自然。relocatedが◎</div></div></span>
+    </div>
+  </div>
+
+  <!-- 参加者2 reaction -->
+  <div class="convo-line" style="flex-direction:row-reverse;">
+    <div class="convo-meta" style="align-items:flex-start;">
+      <span class="ts">0:25</span>
+      <span class="sp sp2">参加者2</span>
+    </div>
+    <div class="bubble sp2-bubble">
+      <div class="kana-orig">はい、あは</div>
+      Yeah... uh-huh.
+    </div>
+  </div>
+
+  <!-- 参加者1 -->
+  <div class="convo-line">
+    <div class="convo-meta">
+      <span class="ts">0:43</span>
+      <span class="sp sp1">参加者1</span>
+    </div>
+    <div class="bubble">
+      <div class="kana-orig">テーセンドハーボース…グッバイマスパーツ…アーボス<span style="color:#e74c3c">無視</span></div>
+      They told her boss... it was time to say goodbye...
+      <span class="hl hl-stuck">無視<div class="tip"><div class="tip-label">⚠️ 詰まった</div><div class="tip-better">Her boss ignored her.</div><div class="tip-note">さらに自然に: brushed her off / gave her the cold shoulder</div></div></span>
+    </div>
+  </div>
+
+  <!-- 参加者2 -->
+  <div class="convo-line" style="flex-direction:row-reverse;">
+    <div class="convo-meta" style="align-items:flex-start;">
+      <span class="ts">1:04</span>
+      <span class="sp sp2">参加者2</span>
+    </div>
+    <div class="bubble sp2-bubble">
+      <div class="kana-orig">ワーイグノイリ</div>
+      <span class="hl hl-good">Why ignoring?<div class="tip"><div class="tip-label">✓ 伝わった</div><div class="tip-better">Why would they ignore her?</div><div class="tip-note">短いけど意図は伝わっていた</div></div></span>
+    </div>
+  </div>
+
+  <!-- 参加者1 -->
+  <div class="convo-line">
+    <div class="convo-meta">
+      <span class="ts">1:21</span>
+      <span class="sp sp1">参加者1</span>
+    </div>
+    <div class="bubble">
+      <div class="kana-orig">シニアマネージャーリサイリッツラストデイ…サデニアワーボースエセイト アイチェンジドアーディスミーティング ノータイムトゥセイグッバイ</div>
+      <span class="hl hl-good">My senior manager's last working day.<div class="tip"><div class="tip-label">✓ 自然</div><div class="tip-better">具体的な状況説明ができていた！</div></div></span>
+      <span class="hl hl-upgrade">Suddenly her boss said, "I changed this meeting."<div class="tip"><div class="tip-label">💡 より自然に</div><div class="tip-better">Out of nowhere, her boss rescheduled the meeting — right on her last day.</div><div class="tip-note">out of nowhere = 突然・予告なし。rescheduled がビジネス的に自然。</div></div></span>
+      <span class="hl hl-good">No time to say goodbye.<div class="tip"><div class="tip-label">✓ 自然</div><div class="tip-better">シャープで感情が伝わる表現！</div></div></span>
+    </div>
+  </div>
+
+  <!-- 参加者2 -->
+  <div class="convo-line" style="flex-direction:row-reverse;">
+    <div class="convo-meta" style="align-items:flex-start;">
+      <span class="ts">2:03</span>
+      <span class="sp sp2">参加者2</span>
+    </div>
+    <div class="bubble sp2-bubble">
+      <div class="kana-orig">スキーフォーユー…エザインなん…イザベイビー</div>
+      <span class="hl hl-good">Sucks for you.<div class="tip"><div class="tip-label">✓ 自然な反応</div><div class="tip-better">共感フレーズが豊富！</div></div></span>
+      <span class="hl hl-good">That's insane.<div class="tip"><div class="tip-label">✓ 自然な反応</div><div class="tip-better">驚きの反応として自然。</div></div></span>
+      <span class="hl hl-good">[The boss] is like a baby.<div class="tip"><div class="tip-label">✓ 自然な批評</div><div class="tip-better">比喩を使った批評。いい表現！</div></div></span>
+    </div>
+  </div>
+
+  <!-- 参加者2 続き -->
+  <div class="convo-line" style="flex-direction:row-reverse;">
+    <div class="convo-meta" style="align-items:flex-start;">
+      <span class="ts">4:26</span>
+      <span class="sp sp2">参加者2</span>
+    </div>
+    <div class="bubble sp2-bubble">
+      <div class="kana-orig">ゆどゆどんはkyシュビライクセイグバイオーサムライクグボイドトゥー</div>
+      <span class="hl hl-stuck">You— you don't have to...? She'd like say goodbye... good to [say goodbye] too.<div class="tip"><div class="tip-label">⚠️ 詰まった</div><div class="tip-better">Were you able to say goodbye to her?</div><div class="tip-note">Did you get a chance to say goodbye? でも◎</div></div></span>
+    </div>
+  </div>
+
+  <div class="section-title">Part 2 · 恋愛トーク (7:37 – 10:18)</div>
+
+  <!-- 参加者1 -->
+  <div class="convo-line">
+    <div class="convo-meta">
+      <span class="ts">7:37</span>
+      <span class="sp sp1">参加者1</span>
+    </div>
+    <div class="bubble">
+      <div class="kana-orig">エセカントピー…リストアイアイクドミートグッドガイ…タガイズアイリアリーライク…マイタイプ</div>
+      He's kind of [cute]...
+      At least I'd like to meet a good guy.
+      <span class="hl hl-upgrade">The guy I really like... he's my type.<div class="tip"><div class="tip-label">💡 より自然に</div><div class="tip-better">I've been crushing on him, actually.</div><div class="tip-note">crush on = 好きな人がいる（口語）。感情がより伝わる。</div></div></span>
+    </div>
+  </div>
+
+  <!-- 参加者2 -->
+  <div class="convo-line" style="flex-direction:row-reverse;">
+    <div class="convo-meta" style="align-items:flex-start;">
+      <span class="ts">8:01</span>
+      <span class="sp sp2">参加者2</span>
+    </div>
+    <div class="bubble sp2-bubble">
+      <div class="kana-orig">イザレイクユーライクテブヒダズンライキンヒーラクトユーバイダズンコンテニューエ</div>
+      <span class="hl hl-good">Is it like, you like him, but he doesn't— he likes talking to you, but doesn't continue?<div class="tip"><div class="tip-label">✓ よく伝わった</div><div class="tip-better">複雑な状況を英語で説明できていた！</div></div></span>
+    </div>
+  </div>
+
+  <!-- 参加者1 -->
+  <div class="convo-line">
+    <div class="convo-meta">
+      <span class="ts">8:08</span>
+      <span class="sp sp1">参加者1</span>
+    </div>
+    <div class="bubble">
+      <div class="kana-orig">バートアイライキーンバットアイウィックドゥンツアンキーバリ</div>
+      But I like him, but
+      <span class="hl hl-stuck">I wouldn't— I wouldn't— he, he, thank...<div class="tip"><div class="tip-label">⚠️ 詰まった</div><div class="tip-better">We just kind of fizzled out.</div><div class="tip-note">fizzle out = 自然消滅する。He just stopped reaching out. でも◎</div></div></span>
+    </div>
+  </div>
+
+  <!-- 参加者2 -->
+  <div class="convo-line" style="flex-direction:row-reverse;">
+    <div class="convo-meta" style="align-items:flex-start;">
+      <span class="ts">9:15</span>
+      <span class="sp sp2">参加者2</span>
+    </div>
+    <div class="bubble sp2-bubble">
+      <div class="kana-orig">アンドヒーライクディーメイビーワイダズンコンテニュートーキング アイオンミーチュアゲイン イズサンドユーティンクベアーサリーズン</div>
+      And he's like... maybe why doesn't he continue talking?
+      <span class="hl hl-upgrade">I'd want to meet you again.<div class="tip"><div class="tip-label">💡 より自然に</div><div class="tip-better">I'd love to see you again. / I'd be down to hang out again.</div><div class="tip-note">hang out = 一緒に遊ぶ・会う（口語）</div></div></span>
+      Do you think there's a reason for that?
+    </div>
+  </div>
+
+  <!-- 参加者1 -->
+  <div class="convo-line">
+    <div class="convo-meta">
+      <span class="ts">9:57</span>
+      <span class="sp sp1">参加者1</span>
+    </div>
+    <div class="bubble">
+      <div class="kana-orig">ワンダリングアアワタアワフューチ…ライクマリッチリレーション</div>
+      <span class="hl hl-upgrade">I'm wondering about my future... like a marriage [type] relationship.<div class="tip"><div class="tip-label">💡 より自然に</div><div class="tip-better">I've been thinking a lot about my future lately — like, what I actually want in a relationship. Marriage, maybe.</div><div class="tip-note">I've been thinking about で「最近ずっと考えてる」ニュアンス。</div></div></span>
+    </div>
+  </div>
+
+  <!-- 参加者2 -->
+  <div class="convo-line" style="flex-direction:row-reverse;">
+    <div class="convo-meta" style="align-items:flex-start;">
+      <span class="ts">10:39</span>
+      <span class="sp sp2">参加者2</span>
+    </div>
+    <div class="bubble sp2-bubble">
+      <div class="kana-orig">ガイズユーメントアーティンキングメリットアダアイティング…デイアーテンキングアプリトメィト</div>
+      Guys your age are thinking [about] marriage and dating...
+      <span class="hl hl-upgrade">They are thinking [about] a relationship.<div class="tip"><div class="tip-label">💡 より自然に</div><div class="tip-better">They're actually thinking seriously about who they end up with.</div><div class="tip-note">「end up with」= 結局付き合う・結婚する相手</div></div></span>
+    </div>
+  </div>
+
+  <!-- 参加者2 続き -->
+  <div class="convo-line" style="flex-direction:row-reverse;">
+    <div class="convo-meta" style="align-items:flex-start;">
+      <span class="ts">11:51</span>
+      <span class="sp sp2">参加者2</span>
+    </div>
+    <div class="bubble sp2-bubble">
+      <div class="kana-orig">条件合わせみたいな。なんて言うんだろう。条件合わせ。</div>
+      <span class="hl hl-stuck">条件合わせ... なんて言うんだろう<div class="tip"><div class="tip-label">⚠️ 詰まった</div><div class="tip-better">It checks all the boxes. / The timing just lines up.</div><div class="tip-note">「条件が全部揃う」= checks all the boxes</div></div></span>
+    </div>
+  </div>
+
+  <!-- 参加者2 続き -->
+  <div class="convo-line" style="flex-direction:row-reverse;">
+    <div class="convo-meta" style="align-items:flex-start;">
+      <span class="ts">12:49</span>
+      <span class="sp sp2">参加者2</span>
+    </div>
+    <div class="bubble sp2-bubble">
+      <div class="kana-orig">慎重な人たち。けふけふ以外。</div>
+      <span class="hl hl-stuck">慎重な... なんて言うんだろうね<div class="tip"><div class="tip-label">⚠️ 詰まった</div><div class="tip-better">cautious / They take things slowly. / They don't rush into things.</div></div></span>
+    </div>
+  </div>
+
+  <div class="section-title">Part 3 · 転職・職場環境 (14:47 – 22:25)</div>
+
+  <!-- 参加者2 オフィス -->
+  <div class="convo-line" style="flex-direction:row-reverse;">
+    <div class="convo-meta" style="align-items:flex-start;">
+      <span class="ts">15:05</span>
+      <span class="sp sp2">参加者2</span>
+    </div>
+    <div class="bubble sp2-bubble">
+      <div class="kana-orig">アイマイオフィスムーブトゥーアードゥフェンオフィス…ウィアイオリスユージングシェアオフィス</div>
+      My office moved to a different office. And we are now using a
+      <span class="hl hl-wasei">share office.<div class="tip"><div class="tip-label">🇯🇵 和製英語</div><div class="tip-better">shared office / co-working space</div><div class="tip-note">「シェアオフィス」は英語圏では通じない</div></div></span>
+    </div>
+  </div>
+
+  <!-- 参加者2 転職 -->
+  <div class="convo-line" style="flex-direction:row-reverse;">
+    <div class="convo-meta" style="align-items:flex-start;">
+      <span class="ts">15:30</span>
+      <span class="sp sp2">参加者2</span>
+    </div>
+    <div class="bubble sp2-bubble">
+      <div class="kana-orig">アイスシュートライントゥーシーアマイフューチュ…アイムティンキングトゥーチェンジジョブ…アイウエンティー天職フェア</div>
+      I should try to see what my future's gonna be, because
+      <span class="hl hl-upgrade">I'm thinking to change jobs.<div class="tip"><div class="tip-label">💡 より自然に</div><div class="tip-better">I've been seriously considering a career change.</div><div class="tip-note">「thinking to~」は不自然。「considering ~ing」が正しい形。</div></div></span>
+      <span class="hl hl-good">I went to a career fair.<div class="tip"><div class="tip-label">✓ 自然</div><div class="tip-better">「天職フェア」でなく career fair と言えていた！</div></div></span>
+    </div>
+  </div>
+
+  <!-- 参加者2 フルフレックス -->
+  <div class="convo-line" style="flex-direction:row-reverse;">
+    <div class="convo-meta" style="align-items:flex-start;">
+      <span class="ts">17:11</span>
+      <span class="sp sp2">参加者2</span>
+    </div>
+    <div class="bubble sp2-bubble">
+      <div class="kana-orig">フルフレックスってなんか…リコメンデットオフィスデイ</div>
+      <span class="hl hl-wasei">Full flex...<div class="tip"><div class="tip-label">🇯🇵 和製英語</div><div class="tip-better">fully flexible hours / full flexibility over when I work</div></div></span>
+      There's a recommended office day.
+    </div>
+  </div>
+
+  <!-- 参加者1 -->
+  <div class="convo-line">
+    <div class="convo-meta">
+      <span class="ts">18:35</span>
+      <span class="sp sp1">参加者1</span>
+    </div>
+    <div class="bubble">
+      <div class="kana-orig">トイスワイヤートワイスワイヤー</div>
+      <span class="hl hl-upgrade">Twice? Why? Twice why?<div class="tip"><div class="tip-label">💡 より自然に</div><div class="tip-better">Wait, why twice? / How come you have to go in twice a week?</div><div class="tip-note">How come = なぜ（口語）。少し文にすると自然。</div></div></span>
+    </div>
+  </div>
+
+  <!-- 参加者2 -->
+  <div class="convo-line" style="flex-direction:row-reverse;">
+    <div class="convo-meta" style="align-items:flex-start;">
+      <span class="ts">18:38</span>
+      <span class="sp sp2">参加者2</span>
+    </div>
+    <div class="bubble sp2-bubble">
+      <div class="kana-orig">半期に1回、年に2回。twiceウィユー…</div>
+      <span class="hl hl-good">Twice a year... we get all members together.<div class="tip"><div class="tip-label">✓ 自然</div><div class="tip-better">twice a year が正確に言えていた！</div></div></span>
+      It's like... more
+      <span class="hl hl-wasei">flexible.<div class="tip"><div class="tip-label">🇯🇵 和製英語注意</div><div class="tip-better">fully flexible hours / flexible work arrangement</div><div class="tip-note">フルフレックスの説明として</div></div></span>
+    </div>
+  </div>
+
+  <!-- 参加者2 転職本音 -->
+  <div class="convo-line" style="flex-direction:row-reverse;">
+    <div class="convo-meta" style="align-items:flex-start;">
+      <span class="ts">19:39</span>
+      <span class="sp sp2">参加者2</span>
+    </div>
+    <div class="bubble sp2-bubble">
+      <div class="kana-orig">アイカインドリンレイブマイジョブズコンストラクト…アイムスティアンダリング</div>
+      <span class="hl hl-upgrade">I kind of love my job's construct.<div class="tip"><div class="tip-label">💡 より自然に</div><div class="tip-better">I love the work itself — it's the environment that's the problem.</div><div class="tip-note">「job content」は和製英語的。「the work itself」が自然。</div></div></span>
+      I'm still
+      <span class="hl hl-upgrade">wondering.<div class="tip"><div class="tip-label">💡 より自然に</div><div class="tip-better">I'm still on the fence. / I haven't made up my mind yet.</div><div class="tip-note">on the fence = 迷っている（決めかねている）</div></div></span>
+    </div>
+  </div>
+
+  <div class="section-title">Part 4 · プライベート・休日 (22:25 – 終了)</div>
+
+  <!-- 参加者2 週末 -->
+  <div class="convo-line" style="flex-direction:row-reverse;">
+    <div class="convo-meta" style="align-items:flex-start;">
+      <span class="ts">23:26</span>
+      <span class="sp sp2">参加者2</span>
+    </div>
+    <div class="bubble sp2-bubble">
+      <div class="kana-orig">イフアイハブトゥーレイズウィーケンド…2週間、2日予定空いてる。どうしよう。</div>
+      <span class="hl hl-upgrade">If I have to raise weekend... I don't have two days.<div class="tip"><div class="tip-label">💡 より自然に</div><div class="tip-better">I have two completely free weekends coming up and I have no idea what to do with myself!</div><div class="tip-note">coming up = これから来る近い未来。「no idea what to do with myself」= どうしていいかわからない（笑いながら言える）</div></div></span>
+    </div>
+  </div>
+
+</div>
+
+<!-- ===== TAB: アップグレード ===== -->
+<div class="panel" id="panel-upgrade">
+  <p style="font-size:13px;color:#666;margin-bottom:20px;">あなたの弱点「簡単な英語で済ませてしまう」— ここで一気にレベルアップしましょう。</p>
+  <div class="phrase-card">
+    <div class="cat">仕事 · 上司への不満</div>
+    <div class="simple-en">❌ Her boss ignored her.</div>
+    <div class="natural-en">✅ Her boss completely brushed her off.</div>
+    <div class="jp">上司が完全に無視した</div>
+    <div class="why">💡 "brush off" = 人を無視・軽くあしらう。感情的なニュアンスが強く出る口語表現。</div>
+  </div>
+  <div class="phrase-card">
+    <div class="cat">仕事 · 急な変更</div>
+    <div class="simple-en">❌ Suddenly her boss changed the meeting.</div>
+    <div class="natural-en">✅ Out of nowhere, her boss rescheduled the meeting — right on her last day.</div>
+    <div class="jp">突然、最終日に上司がミーティングを変更した</div>
+    <div class="why">💡 "out of nowhere" = まったく予告なしに。"rescheduled" はビジネスで自然。</div>
+  </div>
+  <div class="phrase-card">
+    <div class="cat">恋愛 · 好きな人がいる</div>
+    <div class="simple-en">❌ I really like him. He's my type.</div>
+    <div class="natural-en">✅ I've been crushing on him, honestly.</div>
+    <div class="jp">実は彼のことが気になってる</div>
+    <div class="why">💡 "crush on someone" = 片思い・好きな気持ち。"honestly" で打ち明ける感じが出る。</div>
+  </div>
+  <div class="phrase-card">
+    <div class="cat">恋愛 · 自然消滅</div>
+    <div class="simple-en">❌ He stopped contacting. / We can't continue.</div>
+    <div class="natural-en">✅ We just kind of fizzled out.</div>
+    <div class="jp">なんか自然消滅した感じ</div>
+    <div class="why">💡 "fizzle out" = 徐々に終わっていく、自然消滅する。恋愛・会話・計画など色々使える。</div>
+  </div>
+  <div class="phrase-card">
+    <div class="cat">将来 · 考え中</div>
+    <div class="simple-en">❌ I'm wondering about my future.</div>
+    <div class="natural-en">✅ I've been doing a lot of thinking lately — about where I want to be.</div>
+    <div class="jp">最近、自分の将来についていろいろ考えてる</div>
+    <div class="why">💡 "doing a lot of thinking" = 真剣に考えている感が出る口語表現。</div>
+  </div>
+  <div class="phrase-card">
+    <div class="cat">転職 · 検討中</div>
+    <div class="simple-en">❌ I'm thinking to change jobs.</div>
+    <div class="natural-en">✅ I've been seriously considering a career change.</div>
+    <div class="jp">転職をけっこう真剣に考えてる</div>
+    <div class="why">💡 "thinking to ~" は不自然。"considering ~ing" が正しい形。</div>
+  </div>
+  <div class="phrase-card">
+    <div class="cat">仕事内容 · 環境</div>
+    <div class="simple-en">❌ I love my job's content. The environment is not good.</div>
+    <div class="natural-en">✅ I love the work itself — it's the environment that's the problem.</div>
+    <div class="jp">仕事の内容は好きだけど、環境が問題</div>
+    <div class="why">💡 "the work itself" = 仕事そのもの。"it's the X that's the problem" で強調構文。</div>
+  </div>
+</div>
+
+<!-- ===== TAB: 詰まった ===== -->
+<div class="panel" id="panel-stuck">
+  <p style="font-size:13px;color:#666;margin-bottom:20px;">日本語が出た・英語が詰まった場面を時系列で。これが次の練習の宝。</p>
+  <div class="convo-block">
+    <div class="convo-header" onclick="toggle(this)"><span class="timestamp">0:43</span><span class="speaker-badge sp1">参加者1</span><span class="convo-preview">「無視」が日本語で出た</span><span class="toggle-icon">▼</span></div>
+    <div class="convo-body"><div class="stuck-box"><div class="label">⚠️ 詰まった</div><div class="want">言いたかった：「上司が無視した」→ 日本語「無視」が出てしまった</div><div class="answer">→ "Her boss ignored her." でもOK / さらに自然に "Her boss brushed her off."</div></div></div>
+  </div>
+  <div class="convo-block">
+    <div class="convo-header" onclick="toggle(this)"><span class="timestamp">4:26</span><span class="speaker-badge sp2">参加者2</span><span class="convo-preview">「お別れ言えた？」の言い方が崩れた</span><span class="toggle-icon">▼</span></div>
+    <div class="convo-body"><div class="stuck-box"><div class="label">⚠️ 詰まった</div><div class="want">言いたかった：「あなたはその人にお別れ言えたの？」</div><div class="answer">→ "Were you able to say goodbye to her?" / "Did you get a chance to say goodbye?"</div></div></div>
+  </div>
+  <div class="convo-block">
+    <div class="convo-header" onclick="toggle(this)"><span class="timestamp">8:08</span><span class="speaker-badge sp1">参加者1</span><span class="convo-preview">連絡が続かない・自然消滅</span><span class="toggle-icon">▼</span></div>
+    <div class="convo-body"><div class="stuck-box"><div class="label">⚠️ 詰まった</div><div class="want">言いたかった：「連絡が続かない・自然消滅」</div><div class="answer">→ "We just fizzled out." / "He stopped reaching out."</div></div></div>
+  </div>
+  <div class="convo-block">
+    <div class="convo-header" onclick="toggle(this)"><span class="timestamp">11:51</span><span class="speaker-badge sp2">参加者2</span><span class="convo-preview">「条件合わせ」が日本語で出た</span><span class="toggle-icon">▼</span></div>
+    <div class="convo-body"><div class="stuck-box"><div class="label">⚠️ 詰まった（日本語で「条件合わせ」と言っていた）</div><div class="want">言いたかった：「条件が揃って付き合う・条件が合う」</div><div class="answer">→ "It checks all the boxes." / "The timing and everything just lines up."</div></div></div>
+  </div>
+  <div class="convo-block">
+    <div class="convo-header" onclick="toggle(this)"><span class="timestamp">12:49</span><span class="speaker-badge sp2">参加者2</span><span class="convo-preview">「慎重な人」が日本語で出た</span><span class="toggle-icon">▼</span></div>
+    <div class="convo-body"><div class="stuck-box"><div class="label">⚠️ 詰まった</div><div class="want">言いたかった：「慎重な人・ゆっくり進める人」</div><div class="answer">→ "They're cautious." / "They don't rush into things."</div></div></div>
+  </div>
+  <div class="convo-block">
+    <div class="convo-header" onclick="toggle(this)"><span class="timestamp">15:05</span><span class="speaker-badge sp2">参加者2</span><span class="convo-preview">シェアオフィス — 和製英語</span><span class="toggle-icon">▼</span></div>
+    <div class="convo-body"><div class="stuck-box"><div class="label">⚠️ 和製英語</div><div class="want">「シェアオフィス」（英語圏では通じない）</div><div class="answer">→ "shared office" / "co-working space"</div></div></div>
+  </div>
+  <div class="convo-block">
+    <div class="convo-header" onclick="toggle(this)"><span class="timestamp">17:11</span><span class="speaker-badge sp2">参加者2</span><span class="convo-preview">フルフレックス — 和製英語</span><span class="toggle-icon">▼</span></div>
+    <div class="convo-body"><div class="stuck-box"><div class="label">⚠️ 和製英語</div><div class="want">「フルフレックス」（英語圏では通じない）</div><div class="answer">→ "fully flexible hours" / "full flexibility over when and where I work"</div></div></div>
+  </div>
+  <div class="convo-block">
+    <div class="convo-header" onclick="toggle(this)"><span class="timestamp">19:39</span><span class="speaker-badge sp2">参加者2</span><span class="convo-preview">「仕事の内容」— 和製英語的</span><span class="toggle-icon">▼</span></div>
+    <div class="convo-body"><div class="stuck-box"><div class="label">⚠️ 詰まった</div><div class="want">「仕事の内容が好き」→ "my job's construct" と言っていた</div><div class="answer">→ "I love the work itself." / "The actual work is great."</div></div></div>
+  </div>
+</div>
+
+<!-- ===== TAB: まとめ ===== -->
+<div class="panel" id="panel-summary">
+  <div class="highlight-box">
+    <h3>今日のベスト表現（自分で使えていた！）</h3>
+    <div class="highlight-phrase">"No time to say goodbye."</div>
+    <div class="highlight-why">感情的な状況を短くシャープに表現できていた。自然！</div>
+  </div>
+  <div class="highlight-box" style="background:#1e3a5f;">
+    <h3>次回ぜひ使ってほしい表現</h3>
+    <div class="highlight-phrase">"We just kind of fizzled out."</div>
+    <div class="highlight-why">自然消滅 — 今日まさに使いたかった場面があった。次回の恋愛トークで。</div>
+  </div>
+  <div class="summary-card">
+    <h3>✅ 今日できていたこと</h3>
+    <ul>
+      <li>感情的なトピック（上司への怒り・恋愛の気持ち）を英語で話し続けられた</li>
+      <li>"career fair"、"We have weekly meetings" など職場の話が自然に出てきた</li>
+      <li>詰まっても日本語でフォローし合いながら会話が途切れなかった</li>
+      <li>参加者2の反応フレーズ（"That's insane!" "Sucks for you."）が豊富だった</li>
+    </ul>
+  </div>
+  <div class="summary-card">
+    <h3>⚠️ 繰り返し出てきたパターン（弱点）</h3>
+    <ul>
+      <li>複雑な動詞・フレーズが出ない → シンプルな単語で言い換えてしまう</li>
+      <li>「フルフレックス・シェアオフィス」など和製英語をそのまま使ってしまう</li>
+      <li>"I'm thinking to ~" など文法的に不自然な形が出る</li>
+      <li>形容詞・副詞が少ない（"suddenly" → "out of nowhere" など）</li>
+    </ul>
+  </div>
+  <div class="summary-card">
+    <h3>📌 次回の練習目標（3つだけ）</h3>
+    <ul>
+      <li><strong>"fizzle out"</strong> を1回使う — 恋愛・人間関係の話で</li>
+      <li><strong>"It checks all the boxes."</strong> を1回使う — 条件が合う場面で</li>
+      <li>和製英語に気づいたらその場で「英語だと何て言う？」と確認し合う習慣をつける</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+function showTab(e, name) {
+  document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+  document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
+  document.getElementById("panel-" + name).classList.add("active");
+  e.target.classList.add("active");
+}
+function toggle(header) {
+  const body = header.nextElementSibling;
+  const icon = header.querySelector(".toggle-icon");
+  const isOpen = body.classList.contains("open");
+  body.classList.toggle("open", !isOpen);
+  icon.textContent = isOpen ? "▼" : "▲";
+}
+// モバイルでタップして開閉
+document.querySelectorAll(".hl").forEach(el => {
+  el.addEventListener("click", function(e) {
+    e.stopPropagation();
+    document.querySelectorAll(".hl.open").forEach(o => { if(o !== el) o.classList.remove("open"); });
+    this.classList.toggle("open");
+  });
+});
+document.addEventListener("click", () => {
+  document.querySelectorAll(".hl.open").forEach(o => o.classList.remove("open"));
+});
+</script>
+</body>
+</html>
